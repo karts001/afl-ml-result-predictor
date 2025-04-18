@@ -1,0 +1,1 @@
+"""Scrape footy wire website to get afl stats data for the 2025 season"""
