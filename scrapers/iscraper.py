@@ -7,7 +7,7 @@ class IScraper(ABC):
         pass
 
     @abstractmethod
-    def get_match_metadata(self) -> Tuple[str]:
+    def get_match_related_data(self) -> Tuple[str]:
         pass
 
     @abstractmethod

@@ -31,7 +31,7 @@ class FootyWireScraper(IScraper):
 
         return [link["href"] for link in links if "ft_match_statistics" in link["href"]]
     
-    def get_match_metadata(soup: BeautifulSoup) -> Tuple[str]:
+    def get_match_related_data(soup: BeautifulSoup) -> Tuple[str]:
         round_metadata = soup.find("td", attrs={"class": "lnorm"}).get_text(strip=True)
         round_info = round_metadata.split(",")
 
@@ -51,7 +51,7 @@ class FootyWireScraper(IScraper):
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, "html.parser")
-        match_metadata = self.get_match_metadata(soup)
+        match_metadata = self.get_match_related_data(soup)
 
         table = soup.find(id="match-statistics-team1-row")
         
