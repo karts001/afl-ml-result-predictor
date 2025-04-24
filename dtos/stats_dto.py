@@ -1,29 +1,35 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class PlayerMatchStatsDTO(BaseModel):
-    player_name: str
-    kicks: int
-    marks: int
-    handballs: int
-    disposals: int
-    goals: int
-    behinds: int
-    tackles: int
-    hitouts: int
-    inside50s: int
-    clearances: int
-    clangers: int
-    free_kicks_for: int
-    free_kicks_against: int
-    rebound50s: int
-    inside50s: int
-    brownlow_votes: int
-    contested_possessions: int
-    uncontested_possessions: int
-    contested_marks: int
-    marks_inside: int
-    one_percenters: int
-    bounces: int
-    goal_assist: int
-    percent_played: int
-    
+    game_id: str = Field(alias="GameId")
+    team: str = Field(alias="Team")
+    year: int = Field(alias="Year")
+    round: str = Field(alias="Round")
+    player_name: str = Field(alias="DisplayName")
+    kicks: int = Field(alias="Kicks")
+    marks: int = Field(alias="Marks")
+    handballs: int = Field(alias="Handballs")
+    disposals: int = Field(alias="Disposals")
+    goals: int = Field(alias="Goals")
+    behinds: int = Field(alias="Behinds")
+    tackles: int = Field(alias="Tackles")
+    hitouts: int = Field(alias="Hitouts")
+    inside50s: int = Field(alias="Inside50s")
+    clearances: int = Field(alias="Clearances")
+    clangers: int = Field(alias="Clangers")
+    free_kicks_for: int = Field(alias="FreeKicksFor")
+    free_kicks_against: int = Field(alias="FreeKicksAgainst")
+    rebound50s: int = Field(alias="Rebound50s")
+    inside50s: int = Field(alias="Inside50s")
+    brownlow_votes: int = Field(alias="BrownlowVotes")
+    contested_possessions: int = Field(alias="ContestedPossessions")
+    uncontested_possessions: int = Field(alias="UncontestedPossessions")
+    contested_marks: int = Field(alias="ContestedMarks")
+    marks_inside: int = Field(alias="MarksInside")
+    one_percenters: int = Field(alias="OnePercenters")
+    bounces: int = Field(alias="Bounces")
+    goal_assist: int = Field(alias="GoalsAssists")
+    percent_played: int = Field(alias="PercentPlayed")
+
+    class Config:
+        validate_by_name=True

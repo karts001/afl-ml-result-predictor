@@ -177,3 +177,5 @@ cython_debug/
 # Project related items
 kaggle_data
 afl_stats.db
+archive.py
+database.ini
