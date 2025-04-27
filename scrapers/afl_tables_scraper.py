@@ -1,5 +1,6 @@
 import re
 from urllib.parse import urljoin
+from collections import defaultdict
 
 from typing import List, Tuple
 import requests
@@ -19,6 +20,7 @@ class AflTablesScraper():
         self.base_url = base_url
         self.db = db # use to check whether a player already exists in the player table
         self.footy_wire_scraper = footy_wire_scraper
+        self.game_index_counter = defaultdict(int)
 
     def get_match_links(self, year: int = 2025) -> List[str]:
         """Get a list of endpoints which refer to specific match stats for a given year
@@ -40,7 +42,7 @@ class AflTablesScraper():
             link["href"] for link in all_links if f"games/{year}" in link["href"]
         ))
 
-    def get_match_related_data(self, match_endpoint: str, game_index: int) -> Tuple[GameDTO, str]:
+    def get_match_related_data(self, match_endpoint: str) -> Tuple[GameDTO, str]:
         """Get metadata and score data related to a specific match
 
         Args:
@@ -64,7 +66,7 @@ class AflTablesScraper():
 
         return (game_dto, game_id)
     
-    def _get_match_metadata(self, all_rows: ResultSet, game_index: int) -> Tuple[MatchMetadataDTO, str]:
+    def _get_match_metadata(self, all_rows: ResultSet) -> Tuple[MatchMetadataDTO, str]:
         """Scrape metadata of a specific match from afl tables website
 
         Args:
@@ -73,6 +75,7 @@ class AflTablesScraper():
         Returns:
             MatchMetadataDTO: DTO which holds the relevant match related data
         """
+
         print("Getting match metadata (i.e. Attendance, Venue, etc.)")
         metadata_string = all_rows[0].find("td", attrs={"align": "center"}).get_text(strip=True)
 
@@ -82,12 +85,20 @@ class AflTablesScraper():
         match = re.search(pattern, metadata_string)
         
         if match:
-            year = match.group(3).split("-")[2] # get the year from the 
+            round = match.group(1) # get the round from the string
+            year = match.group(3).split("-")[2] # get the year from the string
+
+            # increment the game index counter
+            self.game_index_counter[round] += 1
+            game_index = self.game_index_counter[round]
+
+            # Build the game id string
             game_id = f"{year}R{int(match.group(1)):02d}{game_index:02d}"
+
             metadata_dto = MatchMetadataDTO(
                 game_id = game_id,
                 year=year,
-                round_id = match.group(1),
+                round_id = round,
                 venue = match.group(2).strip(),
                 date = match.group(3),
                 start_time = match.group(4),
@@ -107,17 +118,20 @@ class AflTablesScraper():
         Returns:
             MatchScoreDTO: DTO which holds the relevant match score related data
         """
-        remaining_rows = all_rows[1:3]
+        remaining_rows = all_rows[1:3] # skip the header row
 
         teams = []
         scores_list = []
 
+        # loop through rows and get the game score data and store it in the respective list
         for row in remaining_rows:
             cells = row.find_all("td")
             team_name = cells[0].get_text(strip=True)
+            print(f"Getting score data for {team_name}")
 
+            # afl scores follow and Goal.Behind.Total format. We just want the first 2
             score_data = [self._before_second_dot(cells[i].get_text(strip=True)) for i in range(1, 5)]
-            final_score = cells[4].get_text(strip=True).split(".")[2]
+            final_score = cells[4].get_text(strip=True).split(".")[2] # Get the final score of the game
 
             teams.append(team_name)
             scores_list.append({
@@ -166,34 +180,51 @@ class AflTablesScraper():
         away_team: str,
         round_id: str
     ) -> Tuple[List[PlayerMatchStatsDTO], List[PlayerProfileDTO]]:
-        
-        print("Getting player stats from each match")
+        """Get the individual player stats (Kicks, Disposals etc.) for a given match
+
+        Args:
+            match_endpoint (str): The url which contains stats for the given match
+            game_id (str): GameId referring the given match
+            home_team (str): Name of the home team
+            away_team (str): Name of the away team
+            round_id (str): RoundId for the given match
+
+        Returns:
+            Tuple[List[PlayerMatchStatsDTO], List[PlayerProfileDTO]]: Tuple containing a list 
+            of the PlayerMatchStatsDTO and a list of PlayerProfileDTO
+        """
+        print(f"Getting player stats for game: {game_id} and round: {round_id}")
         response = requests.get(f"{self.base_url}{match_endpoint}")
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
         
-        # Get all tables with class 'sortable'
+        # Get all tables with class 'sortable' and Match Statistics in the header
         sortable_tables = soup.find_all("table", class_="sortable")
+        match_stats_tables = [table for table in sortable_tables if "Match Statistics" in table.find("th").get_text(strip=True)]     
 
-        match_stats_tables = [table for table in sortable_tables if "Match Statistics" in table.find("th").get_text(strip=True)]        
         players_stats_dtos = []
         players_profile_dtos = []
+
         for index, table in enumerate(match_stats_tables):
             rows = table.find_all("tr")[2:]  # skip header rows
-
             for row in rows:
-                cells = row.find_all("td")
+                cells = row.find_all("td") # get all the cells
                 if len(cells) < 25:
                     continue  # skip malformed or empty rows
                 
                 # Get the players name
-                player_link = cells[1].find("a")["href"]
+                player_link = cells[1].find("a")["href"] # url for player profile
                 display_name = cells[1].get_text(strip=True)
 
+                # get the D.O.B from the player profile
                 dob = self.get_player_dob(player_link)
+                # check if the player exists by querying display_name and dob
                 player = self.db.check_player_exists(display_name, dob)
 
                 if not player:
+                    # if the player does not exist in the database
+                    # create a new entry in the players table
+                    print(f"Scraping profile data for {display_name}")
                     players_profile_dtos.append(
                         self.footy_wire_scraper.get_player_profile_stats(
                             team_name=home_team if index == 0 else away_team,
@@ -201,11 +232,11 @@ class AflTablesScraper():
                     ))
 
                 # Map field names to their corresponding int values from cells[2:25]
+                # Unpack dictionary to form DTO
                 stat_values = {
                     field: int(cells[i + 2].get_text(strip=True) or 0) 
                     for i, field in enumerate(field_names)
                 }
-
                 player_stats_dto = PlayerMatchStatsDTO(
                     player_name=display_name,
                     game_id=game_id,
@@ -219,9 +250,15 @@ class AflTablesScraper():
         
         return (players_stats_dtos, players_profile_dtos)
     
-    def get_player_dob(self, player_link) -> str:
-        # check if player already exists in the player table
-        # need to use display_name and dob to cross reference as some players share names
+    def get_player_dob(self, player_link: str) -> str:
+        """Scrape the date of birth from the html
+
+        Args:
+            player_link (str): Endpoint url for given player's profile
+
+        Returns:
+            str: Dob as a string
+        """
 
         response = requests.get(urljoin(f"{self.base_url}games/2025/", player_link)) #FIXME: fudged url to work with player_link value
         response.raise_for_status()
@@ -236,21 +273,7 @@ class AflTablesScraper():
             print("DOB not found")
 
         return dob
-
-    def get_player_biometric_stats(self, player_endpoint: str):
-        response = requests.get(f"{self.base_url}{player_endpoint}")
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        b_tags = soup.find_all("b")
-
-        for tag in b_tags:
-            if "Born:" in tag:
-                dob = tag.get_text(strip=True)
-            else:
-                dob = None
-        
-        return dob
+    
 
 if __name__ == "__main__":
     footy_wire_scraper = FootyWireScraper(base_url="https://www.footywire.com/afl/footy")
@@ -264,8 +287,8 @@ if __name__ == "__main__":
 
     game_dtos = []
 
-    for game_index, link in enumerate(match_links, start=1):
-        game_dto, game_id = scraper.get_match_related_data(link, game_index)
+    for link in match_links:
+        game_dto, game_id = scraper.get_match_related_data(link)
         players_stats, players_identity_data = scraper.get_player_stats_for_match(
             match_endpoint=link,
             game_id=game_id, 
@@ -275,6 +298,6 @@ if __name__ == "__main__":
         )
         game_dtos.append(game_dto)
 
-    print(len(game_dto))
+    print(len(game_dtos))
     print(len(players_identity_data))
     print(len(players_stats))

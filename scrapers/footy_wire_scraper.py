@@ -18,11 +18,18 @@ class FootyWireScraper():
         display_name: str,
         team_name: str,
     ) -> PlayerProfileDTO:
-        
+        """Scrape url to get profile related stats (height, weight etc.) for a given player
+
+        Args:
+            display_name (str): Name of player as displayed on the AflTables site
+            team_name (str): Team the player plays for
+
+        Returns:
+            PlayerProfileDTO: DTO containing player profile related data
+        """
         team_name_split = team_name.split()
         if len(team_name_split) > 1:
             team_name = "-".join(team_name_split)
-            print(team_name)
         
         player_name = self.convert_display_name(display_name)
         url = f"{self.base_url}/pp-{team_name.lower()}--{player_name.lower()}"
@@ -39,7 +46,7 @@ class FootyWireScraper():
         dob, origin = self.extract_identity_data(profile_str)     
 
         biometrics_str = soup.find("div", id="playerProfileData2").get_text(strip=True)
-        height, weight, position = self.extract_biometric_data(biometrics_str)
+        height, weight, position = self.scrape_biometric_data(biometrics_str)
 
         return PlayerProfileDTO(
             player_id=generate(size=10),
@@ -51,20 +58,39 @@ class FootyWireScraper():
             origin=origin
         )
     
-    def convert_display_name(self, name: str):
+    def convert_display_name(self, name: str) -> str:
+        """Convert display name into name format used by footy wire
+
+        Args:
+            name (str): display name of a given player
+
+        Raises:
+            ValueError: Confirms a player has at least a first and second name 
+
+        Returns:
+            str: Returns a string in the format {first_name}-{other_name}
+        """
+        #TODO: Create a mapping for names containing '
         # Split the name into "Last" and "First [Middle]"
-        parts = name.split(",")
-        if len(parts) != 2:
+        res = re.split(r"[,'\s]", name)
+        res.remove("")
+        if len(res) < 2:
             raise ValueError("Name must be in 'Last, First' format")
 
-        last = parts[0].strip()
-        first_and_middle = parts[1].strip().split()
+        res.insert(0, res.pop())
 
         # Reassemble in First-Middle-Last format
-        reordered = first_and_middle + [last]
-        return "-".join(reordered)
+        return "-".join(res)
 
     def extract_identity_data(self, input_str: str) -> Tuple[str, str]:
+        """Use a regex to extract certain data about a specific player
+
+        Args:
+            input_str (str): Html element as a string
+
+        Returns:
+            Tuple[str, str]: Return the dob and origin of a player
+        """
         dob_match = re.search(r'Born:\s+([A-Za-z]+\s+\d{1,2},\s+\d{4})', input_str)
         origin_match = re.search(r'Origin:\s+(.+)', input_str)
 
@@ -73,7 +99,15 @@ class FootyWireScraper():
 
         return dob, origin
     
-    def extract_biometric_data(self, input_str: str) -> Tuple[int, int, str]:
+    def scrape_biometric_data(self, input_str: str) -> Tuple[int, int, str]:
+        """Extract biometric data from a string using a regex expression
+
+        Args:
+            input_str (str): String where the data is to be extracted from
+
+        Returns:
+            Tuple[int, int, str]: Return height, weight and positions of the given player
+        """
         height_match = re.search(r'Height:\s*(\d+)\s*cm', input_str)
         weight_match = re.search(r'Weight:\s*(\d+)\s*kg', input_str)
 
@@ -94,4 +128,7 @@ class FootyWireScraper():
 
 if __name__ == "__main__":
     scraper = FootyWireScraper(base_url="https://www.footywire.com/afl/footy")
-    player_profile_dto = scraper.get_player_profile_stats("windsor, caleb", "melbourne")
+    #TODO: use the following for unit tests
+    player_profile_dto = scraper.get_player_profile_stats("draper, sid", "adelaide")
+    player_profile_dto = scraper.get_player_profile_stats("de koning, tom", "carlton")
+    player_profile_dto = scraper.get_player_profile_stats("o'connell, liam", "st kilda")
