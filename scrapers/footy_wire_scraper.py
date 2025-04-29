@@ -1,13 +1,14 @@
 """Scrape footy wire website to get afl stats data for the 2025 season"""
 
 import re
-from typing import Tuple
+from typing import List, Tuple
 
 import requests
 from bs4 import BeautifulSoup
 from nanoid import generate
 
 from dtos.player_profile_dto import PlayerProfileDTO
+from helpers import name_corrections
 
 class FootyWireScraper():
     def __init__(self, base_url: str):
@@ -68,19 +69,27 @@ class FootyWireScraper():
             ValueError: Confirms a player has at least a first and second name 
 
         Returns:
-            str: Returns a string in the format {first_name}-{other_name}
+            str: Returns a string in the format {first_name}-{other_name(s)}
         """
         #TODO: Create a mapping for names containing '
         # Split the name into "Last" and "First [Middle]"
+
         res = re.split(r"[,'\s]", name)
         res.remove("")
         if len(res) < 2:
             raise ValueError("Name must be in 'Last, First' format")
-
         res.insert(0, res.pop())
+
+        if name_corrections.get(res[-1]):
+            corrected_name = self.correct_last_name(res[-1])
+            res.pop() # this might on
+            return "-".join(res + corrected_name)
 
         # Reassemble in First-Middle-Last format
         return "-".join(res)
+    
+    def correct_last_name(self, last_name: str) -> List[str]:
+        return name_corrections.get(last_name, [last_name])
 
     def extract_identity_data(self, input_str: str) -> Tuple[str, str]:
         """Use a regex to extract certain data about a specific player
@@ -131,4 +140,4 @@ if __name__ == "__main__":
     #TODO: use the following for unit tests
     player_profile_dto = scraper.get_player_profile_stats("draper, sid", "adelaide")
     player_profile_dto = scraper.get_player_profile_stats("de koning, tom", "carlton")
-    player_profile_dto = scraper.get_player_profile_stats("o'connell, liam", "st kilda")
+    player_profile_dto = scraper.get_player_profile_stats("OConnell, liam", "st kilda")

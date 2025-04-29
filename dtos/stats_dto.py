@@ -5,6 +5,7 @@ class PlayerMatchStatsDTO(BaseModel):
     team: str = Field(alias="Team")
     year: int = Field(alias="Year")
     round: str = Field(alias="Round")
+    player_id: str = Field(alias="PlayerId")
     player_name: str = Field(alias="DisplayName")
     kicks: int = Field(alias="Kicks")
     marks: int = Field(alias="Marks")
@@ -33,3 +34,4 @@ class PlayerMatchStatsDTO(BaseModel):
 
     class Config:
         validate_by_name=True
+        frozen=True

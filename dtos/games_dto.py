@@ -50,4 +50,5 @@ class GameDTO(BaseModel):
 
     class Config:
         validate_by_name = True
+        frozen=True
 
