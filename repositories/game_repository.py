@@ -27,7 +27,4 @@ class GameRepository(BaseRepository):
             ON CONFLICT (GameId) DO NOTHING
         """
         self.execute_batch(query, values)
-
-
-
         

@@ -20,7 +20,7 @@ class StatRepository(BaseRepository):
         columns, placeholders, values = self.get_columns_placeholders_and_values(stat_dtos)
         
         query = f"""
-            INSERT INTO games
+            INSERT INTO stats
             ({columns}) VALUES ({placeholders})
             ON CONFLICT (GameId, PlayerId) DO NOTHING
         """

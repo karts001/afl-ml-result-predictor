@@ -19,7 +19,7 @@ def convert_date_format(date_str):
     Convert date from DD-MMM-YYYY format to YYYY-MM-DD format
     
     Args:
-        d`ate_str (str): Date in format like '16-Mar-2025'
+        date_str (str): Date in format like '16-Mar-2025'
         
     Returns:
         str: Date in format 'YYYY-MM-DD'
@@ -47,3 +47,4 @@ def before_second_dot(value: str) -> str:
     """
     parts = value.split(".")
     return ".".join(parts[:2]) if len(parts) >= 2 else value
+

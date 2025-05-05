@@ -7,8 +7,15 @@ class PlayerService():
     def __init__(self, repo: PlayerRepository):
         self.repo = repo
 
-    def check_if_player_exists(self, display_name: str, dob: str) -> bool:
+    def get_player_from_db(self, display_name: str, dob: str) -> bool:
         return self.repo.check_player_exists(display_name, dob)
 
     def insert_players(self, player_dtos: List[PlayerProfileDTO]) -> None:
-        self.repo.insert_games(player_dtos)
+        self.repo.insert_players(player_dtos)
+
+    def check_if_player_in_dto_set(self, display_name, dob, dtos: List[PlayerProfileDTO]) -> str|None:
+        for dto in dtos:
+            if dto.display_name == display_name and dto.dob == dob:
+                return dto.player_id
+        
+        return None

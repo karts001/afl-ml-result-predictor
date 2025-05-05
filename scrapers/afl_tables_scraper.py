@@ -8,7 +8,7 @@ import requests
 from bs4 import BeautifulSoup, ResultSet
 
 from config import load_config
-from database import Database
+from database import DatabaseConnectionManager
 from dtos.games_dto import GameDTO, MatchMetadataDTO, MatchScoreDTO
 from dtos.player_profile_dto import PlayerProfileDTO
 from dtos.stats_dto import PlayerMatchStatsDTO
@@ -29,7 +29,7 @@ class AflTablesScraper():
             game_service: GameService,
             stat_service: StatService,
             base_url: str,
-            footy_wire_scraper: FootyWireScraper
+            footy_wire_scraper: FootyWireScraper,
             ):
         self.player_service = player_service
         self.game_service = game_service
@@ -183,7 +183,9 @@ class AflTablesScraper():
         game_id: str,
         home_team: str,
         away_team: str,
-        round_id: str
+        round_id: str,
+        player_dtos: set[PlayerProfileDTO],
+        player_match_stats_dtos: set[PlayerMatchStatsDTO]
     ) -> Tuple[set[PlayerMatchStatsDTO], set[PlayerProfileDTO]]:
         
         """Get the individual player stats (Kicks, Disposals etc.) for a given match
@@ -200,16 +202,7 @@ class AflTablesScraper():
             of the PlayerMatchStatsDTO and a list of PlayerProfileDTO
         """
         print(f"Getting player stats for game: {game_id}")
-        response = requests.get(f"{self.base_url}{match_endpoint}")
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        
-        # Get all tables with class 'sortable' and Match Statistics in the header
-        sortable_tables = soup.find_all("table", class_="sortable")
-        match_stats_tables = [table for table in sortable_tables if "Match Statistics" in table.find("th").get_text(strip=True)]     
-
-        players_stats_dtos = set()
-        players_profile_dtos = set()
+        match_stats_tables = self.get_table_element_from_page(match_endpoint)     
 
         for index, table in enumerate(match_stats_tables):
             rows = table.find_all("tr")[2:]  # skip header rows
@@ -223,44 +216,64 @@ class AflTablesScraper():
                 display_name = cells[1].get_text(strip=True)
 
                 # get the D.O.B from the player profile
-                dob = self.get_player_dob(player_link)
+                dob = self._get_player_dob(player_link)
                 # check if the player exists by querying display_name and dob
-                player = self.player_service.check_if_player_exists(display_name, dob)
+                existing_player_db = self.player_service.get_player_from_db(display_name, dob)
+                player_id_from_set = self.player_service.check_if_player_in_dto_set(display_name, dob, player_dtos)
 
-                if not player:
-                    # if the player does not exist in the database
-                    # create a new entry in the players table
+                if existing_player_db:
+                    player_id = existing_player_db[0] # first column is player_id. Use this value in the stats dto
+                
+                if player_id_from_set:
+                    print(f"{display_name} has already been scraped so skip")
+                    player_id = player_id_from_set
+
+                if not existing_player_db and not player_id_from_set:
+                    # create a player profile dto which will then be inserted into the db
                     print(f"Scraping profile data for {display_name}")
-                    player = self.footy_wire_scraper.get_player_profile_stats(
+                    player_profile = self.footy_wire_scraper._get_player_profile_stats(
                             team_name=home_team if index == 0 else away_team,
-                            display_name=display_name
+                            display_name=display_name,
+                            dob=dob
                     )
-                    players_profile_dtos.add(player)
-                    player_id = player.player_id # need to set the player_id value for the next dto
-                else:
-                    player_id = player[0] # need to set the player_id value for the next dto 
+                    player_dtos.add(player_profile)
+                    player_id = player_profile.player_id # need to set the player_id value for the next dto
 
                 # Map field names to their corresponding int values from cells[2:25]
                 # Unpack dictionary to form DTO
-                stat_values = {
-                    field: int(cells[i + 2].get_text(strip=True) or 0) 
-                    for i, field in enumerate(field_names)
-                }
-                player_stats_dto = PlayerMatchStatsDTO(
-                    player_name=display_name,
-                    player_id=player_id,
-                    game_id=game_id,
-                    team=home_team if index == 0 else away_team,
-                    year=2025,
-                    round=round_id,
-                    **stat_values
-                )
-                
-                players_stats_dtos.add(player_stats_dto)
+
+                stat_exists = self.stat_service.check_if_stat_exists(game_id, player_id)
+                if not stat_exists:
+                    stat_values = {
+                        field: int(cells[i + 2].get_text(strip=True) or 0) 
+                        for i, field in enumerate(field_names)
+                    }
+
+                    player_stats_dto = PlayerMatchStatsDTO(
+                        player_name=display_name,
+                        player_id=player_id,
+                        game_id=game_id,
+                        team=home_team if index == 0 else away_team,
+                        year=2025,
+                        round=round_id,
+                        **stat_values
+                    )
+                    
+                    player_match_stats_dtos.add(player_stats_dto)
         
-        return (players_stats_dtos, players_profile_dtos)
+        return (player_match_stats_dtos, player_dtos)
+
+    def get_table_element_from_page(self, match_endpoint):
+        response = requests.get(f"{self.base_url}{match_endpoint}")
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        
+        # Get all tables with class 'sortable' and Match Statistics in the header
+        sortable_tables = soup.find_all("table", class_="sortable")
+        match_stats_tables = [table for table in sortable_tables if "Match Statistics" in table.find("th").get_text(strip=True)]
+        return match_stats_tables
     
-    def get_player_dob(self, player_link: str) -> str:
+    def _get_player_dob(self, player_link: str) -> str:
         """Scrape the date of birth from the html
 
         Args:
@@ -286,7 +299,7 @@ class AflTablesScraper():
 
 if __name__ == "__main__":
     # connect to db
-    db = Database(load_config())
+    db = DatabaseConnectionManager(load_config())
     # create repositories
     game_repository = GameRepository(db.conn)
     player_repository = PlayerRepository(db.conn)
@@ -305,7 +318,6 @@ if __name__ == "__main__":
         stat_service=stat_service
     )
     match_links = scraper.get_match_links()
-    print(len(match_links))
 
     game_dtos = set()
     stat_dtos = set()
@@ -323,7 +335,3 @@ if __name__ == "__main__":
         game_dtos.add(game_dto)
         stat_dtos.update(player_stat_dtos)
         player_dtos.update(player_profile_dtos)
-
-    print(len(game_dtos))
-    print(len(player_dtos))
-    print(len(stat_dtos))

@@ -14,10 +14,11 @@ class FootyWireScraper():
     def __init__(self, base_url: str):
         self.base_url = base_url
 
-    def get_player_profile_stats(
+    def _get_player_profile_stats(
         self,
         display_name: str,
         team_name: str,
+        dob: str
     ) -> PlayerProfileDTO:
         """Scrape url to get profile related stats (height, weight etc.) for a given player
 
@@ -32,7 +33,7 @@ class FootyWireScraper():
         if len(team_name_split) > 1:
             team_name = "-".join(team_name_split)
         
-        player_name = self.convert_display_name(display_name)
+        player_name = self._convert_display_name(display_name)
         url = f"{self.base_url}/pp-{team_name.lower()}--{player_name.lower()}"
         response = requests.get(url)
         response.raise_for_status()
@@ -44,10 +45,10 @@ class FootyWireScraper():
             return
         
         profile_str = soup.find("div", id="playerProfileData1").get_text(strip=True)
-        dob, origin = self.extract_identity_data(profile_str)     
+        origin = self._extract_identity_data(profile_str)     
 
         biometrics_str = soup.find("div", id="playerProfileData2").get_text(strip=True)
-        height, weight, position = self.scrape_biometric_data(biometrics_str)
+        height, weight, position = self._scrape_biometric_data(biometrics_str)
 
         return PlayerProfileDTO(
             player_id=generate(size=10),
@@ -59,7 +60,7 @@ class FootyWireScraper():
             origin=origin
         )
     
-    def convert_display_name(self, name: str) -> str:
+    def _convert_display_name(self, name: str) -> str:
         """Convert display name into name format used by footy wire
 
         Args:
@@ -91,7 +92,7 @@ class FootyWireScraper():
     def correct_last_name(self, last_name: str) -> List[str]:
         return name_corrections.get(last_name, [last_name])
 
-    def extract_identity_data(self, input_str: str) -> Tuple[str, str]:
+    def _extract_identity_data(self, input_str: str) -> Tuple[str, str]:
         """Use a regex to extract certain data about a specific player
 
         Args:
@@ -100,15 +101,15 @@ class FootyWireScraper():
         Returns:
             Tuple[str, str]: Return the dob and origin of a player
         """
-        dob_match = re.search(r'Born:\s+([A-Za-z]+\s+\d{1,2},\s+\d{4})', input_str)
+        # dob_match = re.search(r'Born:\s+([A-Za-z]+\s+\d{1,2},\s+\d{4})', input_str)
         origin_match = re.search(r'Origin:\s+(.+)', input_str)
 
-        dob = dob_match.group(1) if dob_match else None
+        # dob = dob_match.group(1) if dob_match else None
         origin = origin_match.group(1).strip() if origin_match else None
 
-        return dob, origin
+        return origin
     
-    def scrape_biometric_data(self, input_str: str) -> Tuple[int, int, str]:
+    def _scrape_biometric_data(self, input_str: str) -> Tuple[int, int, str]:
         """Extract biometric data from a string using a regex expression
 
         Args:
@@ -138,6 +139,6 @@ class FootyWireScraper():
 if __name__ == "__main__":
     scraper = FootyWireScraper(base_url="https://www.footywire.com/afl/footy")
     #TODO: use the following for unit tests
-    player_profile_dto = scraper.get_player_profile_stats("draper, sid", "adelaide")
-    player_profile_dto = scraper.get_player_profile_stats("de koning, tom", "carlton")
-    player_profile_dto = scraper.get_player_profile_stats("OConnell, liam", "st kilda")
+    player_profile_dto = scraper._get_player_profile_stats("draper, sid", "adelaide")
+    player_profile_dto = scraper._get_player_profile_stats("de koning, tom", "carlton")
+    player_profile_dto = scraper._get_player_profile_stats("OConnell, liam", "st kilda")
