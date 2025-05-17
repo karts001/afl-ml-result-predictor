@@ -7,8 +7,8 @@ class GameService():
     def __init__(self, repo: GameRepository):
         self.repo = repo
 
-    def check_if_game_exists(self, date: str, home_team: str, away_team: str) -> bool:
-        return self.repo.check_game_exists(date, home_team, away_team)
+    async def check_if_game_exists(self, date: str, home_team: str, away_team: str) -> bool:
+        return await self.repo.check_game_exists(date, home_team, away_team)
 
-    def insert_games(self, game_dtos: List[GameDTO]) -> None:
-        self.repo.insert_games(game_dtos)
+    async def insert_games(self, game_dtos: List[GameDTO]) -> None:
+        await self.repo.insert_games(game_dtos)

@@ -1,14 +1,15 @@
-import datetime
 import re
 from urllib.parse import urljoin
 from collections import defaultdict
+from logger import logger
 
 from typing import List, Tuple
 import requests
+import httpx
 from bs4 import BeautifulSoup, ResultSet
 
 from config import load_config
-from database import DatabaseConnectionManager
+from database import AsyncDatabaseConnection
 from dtos.games_dto import GameDTO, MatchMetadataDTO, MatchScoreDTO
 from dtos.player_profile_dto import PlayerProfileDTO
 from dtos.stats_dto import PlayerMatchStatsDTO
@@ -38,7 +39,7 @@ class AflTablesScraper():
         self.base_url = base_url
         self.game_index_counter = defaultdict(int)
 
-    def get_match_links(self, year: int = 2025) -> List[str]:
+    async def get_match_links(self, year: int = 2025) -> List[str]:
         """Get a list of endpoints which refer to specific match stats for a given year
 
         Args:
@@ -48,17 +49,22 @@ class AflTablesScraper():
             List[str]: A list of endpoints which correspond to matches which have occured
             in that year.
         """
-        print("Getting a list of endpoints which refer to stats from specific games")
-        response = requests.get(f"{self.base_url}{year}t.html")
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        all_links = soup.find_all("a", href=True)
+        logger.info("Getting a list of endpoints which refer to stats from specific games")
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{self.base_url}{year}t.html")
 
-        return list(dict.fromkeys(
-            link["href"] for link in all_links if f"games/{year}" in link["href"]
-        ))
+            if response.status_code == httpx.codes.OK:
+                soup = BeautifulSoup(response.text, "html.parser")
+                all_links = soup.find_all("a", href=True)
 
-    def get_match_related_data(self, match_endpoint: str) -> Tuple[GameDTO, str]:
+                return list(dict.fromkeys(
+                    link["href"] for link in all_links if f"games/{year}" in link["href"]
+                ))
+            else:
+                logger.error(f"❌ Failed to fetch match links for {year}. Status: {response.status_code}")
+                logger.info(f"Response content: {response.text}")
+
+    async def get_match_related_data(self, match_endpoint: str) -> Tuple[GameDTO, str]:
         """Get metadata and score data related to a specific match
 
         Args:
@@ -68,21 +74,28 @@ class AflTablesScraper():
         Returns:
             Tuple[MatchMetadataDTO, MatchScoreDTO]: Tuple containing the match related data
         """
-        print("Getting game related data")
-        response = requests.get(f"{self.base_url}{match_endpoint}")
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
+        async with httpx.AsyncClient() as client:
+            logger.info("Getting game related data")
+            response = await client.get(f"{self.base_url}{match_endpoint}")
 
-        full_table = soup.find("table")
-        all_rows = full_table.find_all("tr")
+            if response.status_code == httpx.codes.OK:
 
-        match_scores_dto = self._get_match_score_data(all_rows)
-        metadata_dto = self._get_match_metadata(all_rows, match_scores_dto.home_team, match_scores_dto.away_team)    
-        game_dto = GameDTO(**metadata_dto.model_dump(), **match_scores_dto.model_dump())
+                soup = BeautifulSoup(response.text, "html.parser")
 
-        return game_dto
+                full_table = soup.find("table")
+                all_rows = full_table.find_all("tr")
+
+                match_scores_dto = self._get_match_score_data(all_rows)
+                metadata_dto = await self._get_match_metadata(all_rows, match_scores_dto.home_team, match_scores_dto.away_team)    
+                game_dto = GameDTO(**metadata_dto.model_dump(), **match_scores_dto.model_dump())
+
+                return game_dto
+            else:
+                logger.error(f"❌ Failed to fetch match metadata and score data. Status: {response.status_code}")
+                logger.info(f"Response content: {response.content}")
+
     
-    def _get_match_metadata(
+    async def _get_match_metadata(
             self,
             all_rows: ResultSet,
             home_team: str,
@@ -97,7 +110,7 @@ class AflTablesScraper():
             MatchMetadataDTO: DTO which holds the relevant match related data
         """
 
-        print("Getting match metadata (i.e. Attendance, Venue, etc.)")
+        logger.info("Getting match metadata (i.e. Attendance, Venue, etc.)")
         metadata_string = all_rows[0].find("td", attrs={"align": "center"}).get_text(strip=True)
 
         # string returned is not in a useful format. Use a regex expression to extract the required data
@@ -105,6 +118,7 @@ class AflTablesScraper():
         # FIXME: Pattern only works for rounds like R1,R2.. R23, but it won't work for Quarter finals etc.
         match = re.search(pattern, metadata_string)
         
+        logger.info("Checking input against regex pattern")
         if match:
             round = match.group(1) # get the round from the string
             year = match.group(3).split("-")[2] # get the year from the string
@@ -116,8 +130,11 @@ class AflTablesScraper():
             # Build the game id string
             game_id = f"{year}R{int(match.group(1)):02d}{game_index:02d}"
 
-            if not self.game_service.check_if_game_exists(date, home_team, away_team):
+            game_exists = await self.game_service.check_if_game_exists(date, home_team, away_team)
+
+            if not game_exists:
                 # only want to add the dto if it doesn't already exist in the db
+                logger.info("Game does not exist in db, extracting data into DTO")
                 metadata_dto = MatchMetadataDTO(
                     game_id = game_id,
                     year=year,
@@ -148,7 +165,7 @@ class AflTablesScraper():
         for row in remaining_rows:
             cells = row.find_all("td")
             team_name = cells[0].get_text(strip=True)
-            print(f"Getting score data for {team_name}")
+            logger.info(f"Getting score data for {team_name}")
 
             # afl scores follow and Goal.Behind.Total format. We just want the first 2
             score_data = [before_second_dot(cells[i].get_text(strip=True)) for i in range(1, 5)]
@@ -178,7 +195,7 @@ class AflTablesScraper():
             away_team_score=scores_list[1].get("final_score")
         )
 
-    def get_player_stats_for_match(self,
+    async def get_player_stats_for_match(self,
         match_endpoint: str,
         game_id: str,
         home_team: str,
@@ -201,7 +218,7 @@ class AflTablesScraper():
             Tuple[List[PlayerMatchStatsDTO], List[PlayerProfileDTO]]: Tuple containing a list 
             of the PlayerMatchStatsDTO and a list of PlayerProfileDTO
         """
-        print(f"Getting player stats for game: {game_id}")
+        logger.info(f"Getting player stats for game: {game_id}")
         match_stats_tables = self.get_table_element_from_page(match_endpoint)     
 
         for index, table in enumerate(match_stats_tables):
@@ -218,48 +235,50 @@ class AflTablesScraper():
                 # get the D.O.B from the player profile
                 dob = self._get_player_dob(player_link)
                 # check if the player exists by querying display_name and dob
-                existing_player_db = self.player_service.get_player_from_db(display_name, dob)
+                existing_player_db = await self.player_service.get_player_from_db(display_name, dob)
                 player_id_from_set = self.player_service.check_if_player_in_dto_set(display_name, dob, player_dtos)
 
                 if existing_player_db:
                     player_id = existing_player_db[0] # first column is player_id. Use this value in the stats dto
                 
                 if player_id_from_set:
-                    print(f"{display_name} has already been scraped so skip")
+                    logger.info(f"{display_name} has already been scraped so skip")
                     player_id = player_id_from_set
 
                 if not existing_player_db and not player_id_from_set:
                     # create a player profile dto which will then be inserted into the db
-                    print(f"Scraping profile data for {display_name}")
+                    logger.info(f"Scraping profile data for {display_name}")
                     player_profile = self.footy_wire_scraper._get_player_profile_stats(
                             team_name=home_team if index == 0 else away_team,
                             display_name=display_name,
                             dob=dob
                     )
-                    player_dtos.add(player_profile)
-                    player_id = player_profile.player_id # need to set the player_id value for the next dto
 
-                # Map field names to their corresponding int values from cells[2:25]
-                # Unpack dictionary to form DTO
+                    if player_profile:
+                        player_dtos.add(player_profile)
+                        player_id = player_profile.player_id # need to set the player_id value for the next dto
 
-                stat_exists = self.stat_service.check_if_stat_exists(game_id, player_id)
-                if not stat_exists:
-                    stat_values = {
-                        field: int(cells[i + 2].get_text(strip=True) or 0) 
-                        for i, field in enumerate(field_names)
-                    }
+                    # Map field names to their corresponding int values from cells[2:25]
+                    # Unpack dictionary to form DTO
 
-                    player_stats_dto = PlayerMatchStatsDTO(
-                        player_name=display_name,
-                        player_id=player_id,
-                        game_id=game_id,
-                        team=home_team if index == 0 else away_team,
-                        year=2025,
-                        round=round_id,
-                        **stat_values
-                    )
-                    
-                    player_match_stats_dtos.add(player_stats_dto)
+                    stat_exists = await self.stat_service.check_if_stat_exists(game_id, player_id)
+                    if not stat_exists:
+                        stat_values = {
+                            field: int(cells[i + 2].get_text(strip=True) or 0) 
+                            for i, field in enumerate(field_names)
+                        }
+
+                        player_stats_dto = PlayerMatchStatsDTO(
+                            player_name=display_name,
+                            player_id=player_id,
+                            game_id=game_id,
+                            team=home_team if index == 0 else away_team,
+                            year=2025,
+                            round=round_id,
+                            **stat_values
+                        )
+                        
+                        player_match_stats_dtos.add(player_stats_dto)
         
         return (player_match_stats_dtos, player_dtos)
 
@@ -299,7 +318,7 @@ class AflTablesScraper():
 
 if __name__ == "__main__":
     # connect to db
-    db = DatabaseConnectionManager(load_config())
+    db = AsyncDatabaseConnection(load_config())
     # create repositories
     game_repository = GameRepository(db.conn)
     player_repository = PlayerRepository(db.conn)

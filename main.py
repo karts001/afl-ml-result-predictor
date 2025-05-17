@@ -1,11 +1,9 @@
 import time
-
+import asyncio
 from typing import Tuple
-from psycopg2.extensions import connection as Connection
 
 from config import load_config
-from database import DatabaseConnectionManager
-from dtos.player_profile_dto import PlayerProfileDTO
+from database import AsyncDatabaseConnection
 from repositories.game_repository import GameRepository
 from repositories.player_repository import PlayerRepository
 from repositories.stats_repository import StatRepository
@@ -14,17 +12,20 @@ from scrapers.footy_wire_scraper import FootyWireScraper
 from services.game_service import GameService
 from services.player_service import PlayerService
 from services.stat_service import StatService
+from logger import logger
 
-def initialise_repositories(conn: Connection) -> Tuple[GameRepository, PlayerRepository, StatRepository]:
+
+def initialise_repositories(db_manager: AsyncDatabaseConnection) -> Tuple[GameRepository, PlayerRepository, StatRepository]:
     """Initialise the game, player and stat repository
 
     Returns:
         Tuple[GameRepository, PlayerRepository, StatRepository]: Return a tuple containing the
         repositories.
     """
-    game_repository = GameRepository(conn)
-    player_repository = PlayerRepository(conn)
-    stat_repository = StatRepository(conn)
+    logger.info("Initialising repositories...")
+    game_repository = GameRepository(db_manager)
+    player_repository = PlayerRepository(db_manager)
+    stat_repository = StatRepository(db_manager)
 
     return game_repository, player_repository, stat_repository
 
@@ -43,6 +44,7 @@ def initialise_services(
     Returns:
         Tuple[GameService, PlayerService, StatService]: Tuple containing the services
     """
+    logger.info("Initialising services...")
     game_service = GameService(game_repository)
     player_service = PlayerService(player_repository)
     stat_service = StatService(stat_repository)
@@ -65,6 +67,7 @@ def initialise_scrapers(
         AflTablesScraper: The scraper class
     """
     # create scrapers
+    logger.info("Initialising scrapers...")
     footy_wire_scraper = FootyWireScraper("https://www.footywire.com/afl/footy")
     afl_tables_scraper = AflTablesScraper(
         base_url="https://afltables.com/afl/stats/",
@@ -76,7 +79,7 @@ def initialise_scrapers(
 
     return afl_tables_scraper
 
-def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper) -> Tuple[set, set, set]:
+async def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper) -> Tuple[set, set, set]:
     """Scrape the data from afl tables and footy wire and store in sets
 
     Args:
@@ -85,14 +88,15 @@ def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper) -> Tuple[s
     Returns:
         Tuple[set, set, set]: Sets for each table in the db
     """
-    match_links = afl_tables_scraper.get_match_links(year=2025)
+    year = 2025
+    match_links = await afl_tables_scraper.get_match_links(year=year)
     game_dtos = set()
     stat_dtos = set()
     player_dtos = set()
 
     for link in match_links:
-        game_dto = afl_tables_scraper.get_match_related_data(link)
-        player_stat_dtos, player_dtos = afl_tables_scraper.get_player_stats_for_match(
+        game_dto = await afl_tables_scraper.get_match_related_data(link)
+        player_stat_dtos, player_dtos = await afl_tables_scraper.get_player_stats_for_match(
             match_endpoint=link,
             game_id=game_dto.game_id, 
             home_team=game_dto.home_team, 
@@ -107,8 +111,9 @@ def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper) -> Tuple[s
     
     return game_dtos, player_dtos, stat_dtos
 
-def scrape_stats():
-    db_manager = DatabaseConnectionManager(load_config())
+async def scrape_stats():
+
+    db_manager = AsyncDatabaseConnection(load_config())
     game_repository, player_repository, stat_repository = initialise_repositories(db_manager)
     game_service, player_service, stat_service = initialise_services(
         game_repository, 
@@ -116,7 +121,7 @@ def scrape_stats():
         stat_repository
     )
     afl_tables_scraper = initialise_scrapers(game_service, player_service, stat_service)
-    game_dtos, player_dtos, stat_dtos = scrape_data_from_afl_tables(afl_tables_scraper) 
+    game_dtos, player_dtos, stat_dtos = await scrape_data_from_afl_tables(afl_tables_scraper) 
     
     game_service.insert_games(game_dtos)
     player_service.insert_players(player_dtos)
@@ -125,5 +130,5 @@ def scrape_stats():
 
 if __name__ == "__main__":
     start_time = time.time()
-    scrape_stats()
+    asyncio.run(scrape_stats())
     print(f"Program took {time.time() - start_time} seconds to complete")

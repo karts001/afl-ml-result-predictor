@@ -4,18 +4,18 @@ from repositories.base_repository import BaseRepository
 from dtos.games_dto import GameDTO
 
 class GameRepository(BaseRepository): 
-    def check_game_exists(self, date: str, home_team: str, away_team: str) -> bool:
+    async def check_game_exists(self, date: str, home_team: str, away_team: str) -> bool:
         query = """
             SELECT 1
             FROM games
-            WHERE Date = %s AND HomeTeam = %s AND AwayTeam = %s
+            WHERE Date = $1 AND HomeTeam = $2 AND AwayTeam = $3
             LIMIT 1
         """
-        result = self.fetch_one(query, (date, home_team, away_team))
+        result = await self.fetch_one(query, (date, home_team, away_team))
 
         return result is not None
 
-    def insert_games(self, game_dtos: List[GameDTO]) -> None:
+    async def insert_games(self, game_dtos: List[GameDTO]) -> None:
         if not game_dtos:
             return
         
@@ -26,5 +26,5 @@ class GameRepository(BaseRepository):
             ({columns}) VALUES ({placeholders})
             ON CONFLICT (GameId) DO NOTHING
         """
-        self.execute_batch(query, values)
+        await self.execute_batch(query, values)
         

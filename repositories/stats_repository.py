@@ -8,7 +8,7 @@ class StatRepository(BaseRepository):
         query = """
             SELECT 1
             FROM stats
-            WHERE GameId ILIKE %s and PlayerId ILIKE %s
+            WHERE GameId ILIKE $1 and PlayerId ILIKE $2
             LIMIT 1
         """
         return self.fetch_one(query, (game_id, player_id))

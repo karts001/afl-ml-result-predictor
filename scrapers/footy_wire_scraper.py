@@ -2,6 +2,7 @@
 
 import re
 from typing import List, Tuple
+from logger import logger
 
 import requests
 from bs4 import BeautifulSoup
@@ -40,9 +41,10 @@ class FootyWireScraper():
         soup = BeautifulSoup(response.text, "html.parser")
 
         if "Oops! Player Not Found ..." in soup.get_text(strip=True):
-            print(f"Can't find {player_name} in FootyWire")
-            print(f"Tried scraping the following url: {url}")
-            return
+            logger.warning(f"Can't find {player_name} in FootyWire")
+            logger.info(f"Tried scraping the following url: {url}")
+            # need to return a default value so program doesn't crash
+            return False
         
         profile_str = soup.find("div", id="playerProfileData1").get_text(strip=True)
         origin = self._extract_identity_data(profile_str)     

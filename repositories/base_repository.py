@@ -1,36 +1,34 @@
 from typing import Any, List, Optional, Tuple
+from logger import logger
+
 import psycopg2
-import psycopg2.extras
+
 from psycopg2.extensions import connection as Connection
 
-from database import DatabaseConnectionManager
+from database import AsyncDatabaseConnection
 
 class BaseRepository():
-    def __init__(self, db_manager: Optional[DatabaseConnectionManager]):
+    def __init__(self, db_manager: Optional[AsyncDatabaseConnection]):
         self.db_manager = db_manager
 
-    def fetch_one(self, query: str, params: Tuple[Any, ...] = ()):
+    async def fetch_one(self, query: str, params: Tuple[Any, ...] = ()):
         try:            
-            with self.db_manager.connection_from_pool() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(query, params)
-                    return cursor.fetchone()
+            async with self.db_manager.connection_from_pool() as conn:
+                result = await conn.fetchrow(query, *params)
+                return result
         except (Exception, psycopg2.DatabaseError) as e:
-            print(f"❌ Failed to retrieve row. {e}")
+            logger.error(f"Failed to retrieve row: {e}")
             raise
 
         
-    def execute_batch(self, query: str, params: List[Tuple[Any, ...]]):
+    async def execute_batch(self, query: str, params: List[Tuple[Any, ...]]):
         try:
-            with self.db_manager.connection_from_pool() as conn:
-                with conn.cursor() as cursor:
-                    psycopg2.extras.execute_batch(cursor, query, params)
-                conn.commit()
+            async with self.db_manager.connection_from_pool() as conn:
+                result = await conn.executemany(query, params)
+                return result
         except (Exception, psycopg2.DatabaseError) as e:
-            conn.rollback()
-            print(f"❌ Failed to add rows. {e}")
+            logger.error(f"Failed to execute batch: {e}")
             raise
-
     
     def get_columns_placeholders_and_values(self, dtos: set[Any]):
         if not dtos:
