@@ -9,14 +9,21 @@ jobs:
   scrape:
     runs-on: ubuntu-latest
     steps:
-      name: Install dependencies
-      run: pip install -r requirements.txt
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      name: Run scraper
-      env:
-        DB_URL: ${{ secrets.DB_URL }}
-        DB_NAME: ${{ secrets.DB_NAME }}
-        DB_USERNAME: ${{ secrets.DB_USERNAME }}
-        DB_PWORD: ${{ secrets.DB_PWORD }}
-        DB_SSL: ${{ secrets.DB_SSL }}
-      run: python main.py
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10' 
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scraper
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PWORD: ${{ secrets.DB_PWORD }}
+          DB_SSL: ${{ secrets.DB_SSL }}
+        run: python main.py
