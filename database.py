@@ -1,19 +1,23 @@
-from typing import Dict
 import atexit
 from contextlib import asynccontextmanager
 import asyncio
+import os
 
 from asyncpg import pool
+from dotenv import load_dotenv
 
-from config import load_config    
 from logger import logger
 
+load_dotenv()
+
 class AsyncDatabaseConnection():
-    def __init__(self, config: Dict[str, str], min_conn=1, max_conn=10):
-        self.config = config
+    def __init__(self, min_conn=1, max_conn=10):
         self._min_conn = min_conn
         self._max_conn = max_conn
         self.pool = None
+        self.connection_string = f"""postgresql://{os.getenv("DB_NAME"):
+        {os.getenv("DB_PWORD")}}@{os.getenv("DB_URL")}
+        {os.getenv("DB_USERNAME")}?sslmode={os.getenv("DB_SSL")}"""
 
         atexit.register(self._sync_close_all)
 
@@ -21,7 +25,7 @@ class AsyncDatabaseConnection():
         self.pool = await pool.create_pool(
             min_size=self._min_conn,
             max_size=self._max_conn,
-            **self.config
+            dsn=self.connection_string
         )
         logger.info("Connection pool created")        
 
@@ -45,11 +49,14 @@ class AsyncDatabaseConnection():
         try:
             loop = asyncio.get_running_loop()
             # Use a background task or warn
-            logger.warn("Cannot close pool from running event loop. Please call close_all() explicitly.")
+            logger.warning("Cannot close pool from running event loop. Please call close_all() explicitly.")
         except RuntimeError:
             asyncio.run(self.close_all())
 
 
 if __name__ == "__main__":
-    db = AsyncDatabaseConnection(config=load_config())
-    async_db = AsyncDatabaseConnection(config=load_config())
+    async def main():
+        async_db = AsyncDatabaseConnection()
+        await async_db.create_connection_pool()
+
+    asyncio.run(main())

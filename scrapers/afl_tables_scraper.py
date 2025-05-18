@@ -4,7 +4,6 @@ from collections import defaultdict
 from logger import logger
 
 from typing import List, Tuple
-import requests
 import httpx
 from bs4 import BeautifulSoup, ResultSet
 
@@ -219,7 +218,11 @@ class AflTablesScraper():
             of the PlayerMatchStatsDTO and a list of PlayerProfileDTO
         """
         logger.info(f"Getting player stats for game: {game_id}")
-        match_stats_tables = self.get_table_element_from_page(match_endpoint)     
+        match_stats_tables = await self.get_table_element_from_page(match_endpoint)     
+
+        if not match_stats_tables:
+            # if the stats don't exist return a tuple of empty dtos
+            return (PlayerMatchStatsDTO(), PlayerProfileDTO())
 
         for index, table in enumerate(match_stats_tables):
             rows = table.find_all("tr")[2:]  # skip header rows
@@ -233,7 +236,9 @@ class AflTablesScraper():
                 display_name = cells[1].get_text(strip=True)
 
                 # get the D.O.B from the player profile
-                dob = self._get_player_dob(player_link)
+                dob = await self._get_player_dob(player_link)
+                if not dob:
+                    continue
                 # check if the player exists by querying display_name and dob
                 existing_player_db = await self.player_service.get_player_from_db(display_name, dob)
                 player_id_from_set = self.player_service.check_if_player_in_dto_set(display_name, dob, player_dtos)
@@ -282,17 +287,22 @@ class AflTablesScraper():
         
         return (player_match_stats_dtos, player_dtos)
 
-    def get_table_element_from_page(self, match_endpoint):
-        response = requests.get(f"{self.base_url}{match_endpoint}")
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
+    async def get_table_element_from_page(self, match_endpoint) -> List | bool:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{self.base_url}{match_endpoint}")
+            if response.status_code == httpx.codes.OK:
+                soup = BeautifulSoup(response.text, "html.parser")
         
-        # Get all tables with class 'sortable' and Match Statistics in the header
-        sortable_tables = soup.find_all("table", class_="sortable")
-        match_stats_tables = [table for table in sortable_tables if "Match Statistics" in table.find("th").get_text(strip=True)]
-        return match_stats_tables
+                # Get all tables with class 'sortable' and Match Statistics in the header
+                logger.info("Getting match stats table")
+                sortable_tables = soup.find_all("table", class_="sortable")
+                match_stats_tables = [table for table in sortable_tables if "Match Statistics" in table.find("th").get_text(strip=True)]
+                return match_stats_tables
+            else:
+                logger.warning("Match stats table not found")
+                return False
     
-    def _get_player_dob(self, player_link: str) -> str:
+    async def _get_player_dob(self, player_link: str) -> str | bool:
         """Scrape the date of birth from the html
 
         Args:
@@ -301,20 +311,23 @@ class AflTablesScraper():
         Returns:
             str: Dob as a string
         """
+        async with httpx.AsyncClient() as client:
+            response = await client.get(urljoin(f"{self.base_url}games/2025/", player_link)) #FIXME: fudged url to work with player_link value
+            if response.status_code == httpx.codes.OK:
+                soup = BeautifulSoup(response.text, "html.parser")
+                born_b_tag = soup.find("b", string=re.compile(r"Born:"))
+                # Extract the text that comes after "Born:" and format it
+                if born_b_tag:
+                    # Use regex to extract the date portion
+                    dob = born_b_tag.next_sibling.replace("(", "").strip()
+                else:
+                    print("DOB not found")
 
-        response = requests.get(urljoin(f"{self.base_url}games/2025/", player_link)) #FIXME: fudged url to work with player_link value
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        born_b_tag = soup.find("b", string=re.compile(r"Born:"))
-        # Extract the text that comes after "Born:" and format it
-        if born_b_tag:
-            # Use regex to extract the date portion
-            dob = born_b_tag.next_sibling.replace("(", "").strip()
-        else:
-            print("DOB not found")
-
-        return dob
+                return dob
+            else:
+                logger.warning("Get request failed so dob not scraped")
+                logger.info("Return an empty string")
+                return False
 
 if __name__ == "__main__":
     # connect to db

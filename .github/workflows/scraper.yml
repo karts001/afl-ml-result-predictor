@@ -1,0 +1,22 @@
+name: Weekly AFL stats scraper
+run-name: Scrape stats for current game week
+
+on:
+  schedule:
+    - cron: '0 10 * * 1'
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      name: Install dependencies
+      run: pip install -r requirements.txt
+
+      name: Run scraper
+      env:
+        DB_URL: ${{ secrets.DB_URL }}
+        DB_NAME: ${{ secrets.DB_NAME }}
+        DB_USERNAME: ${{ secrets.DB_USERNAME }}
+        DB_PWORD: ${{ secrets.DB_PWORD }}
+        DB_SSL: ${{ secrets.DB_SSL }}
+      run: python main.py

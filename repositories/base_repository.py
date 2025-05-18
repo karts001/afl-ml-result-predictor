@@ -1,9 +1,7 @@
 from typing import Any, List, Optional, Tuple
 from logger import logger
 
-import psycopg2
-
-from psycopg2.extensions import connection as Connection
+import asyncpg
 
 from database import AsyncDatabaseConnection
 
@@ -16,7 +14,7 @@ class BaseRepository():
             async with self.db_manager.connection_from_pool() as conn:
                 result = await conn.fetchrow(query, *params)
                 return result
-        except (Exception, psycopg2.DatabaseError) as e:
+        except (Exception, asyncpg.InterfaceError) as e:
             logger.error(f"Failed to retrieve row: {e}")
             raise
 
@@ -26,7 +24,7 @@ class BaseRepository():
             async with self.db_manager.connection_from_pool() as conn:
                 result = await conn.executemany(query, params)
                 return result
-        except (Exception, psycopg2.DatabaseError) as e:
+        except (Exception, asyncpg.InterfaceError) as e:
             logger.error(f"Failed to execute batch: {e}")
             raise
     
