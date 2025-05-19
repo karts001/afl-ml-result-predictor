@@ -2,7 +2,6 @@ import time
 import asyncio
 from typing import Tuple
 
-from config import load_config
 from database import AsyncDatabaseConnection
 from repositories.game_repository import GameRepository
 from repositories.player_repository import PlayerRepository
@@ -113,7 +112,7 @@ async def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper) -> T
 
 async def scrape_stats():
 
-    db_manager = AsyncDatabaseConnection(load_config())
+    db_manager = AsyncDatabaseConnection()
     game_repository, player_repository, stat_repository = initialise_repositories(db_manager)
     game_service, player_service, stat_service = initialise_services(
         game_repository, 

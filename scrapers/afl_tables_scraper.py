@@ -7,7 +7,6 @@ from typing import List, Tuple
 import httpx
 from bs4 import BeautifulSoup, ResultSet
 
-from config import load_config
 from database import AsyncDatabaseConnection
 from dtos.games_dto import GameDTO, MatchMetadataDTO, MatchScoreDTO
 from dtos.player_profile_dto import PlayerProfileDTO
@@ -331,7 +330,7 @@ class AflTablesScraper():
 
 if __name__ == "__main__":
     # connect to db
-    db = AsyncDatabaseConnection(load_config())
+    db = AsyncDatabaseConnection()
     # create repositories
     game_repository = GameRepository(db.conn)
     player_repository = PlayerRepository(db.conn)
