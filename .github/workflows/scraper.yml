@@ -4,6 +4,7 @@ run-name: Scrape stats for current game week
 on:
   schedule:
     - cron: '0 10 * * 1'
+  workflow_dispatch: # Enables manual trigger
 
 jobs:
   scrape:
