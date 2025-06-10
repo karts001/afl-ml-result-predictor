@@ -3,6 +3,8 @@ from typing import List
 from repositories.base_repository import BaseRepository
 from dtos.games_dto import GameDTO
 
+from logger import logger
+
 class GameRepository(BaseRepository): 
     async def check_game_exists(self, date: str, home_team: str, away_team: str) -> bool:
         query = """
@@ -11,6 +13,7 @@ class GameRepository(BaseRepository):
             WHERE Date = $1 AND HomeTeam = $2 AND AwayTeam = $3
             LIMIT 1
         """
+        logger.info(f"date: {date}, home_team: {home_team}, away_team: {away_team}")
         result = await self.fetch_one(query, (date, home_team, away_team))
 
         return result is not None

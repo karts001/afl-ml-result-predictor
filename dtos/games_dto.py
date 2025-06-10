@@ -23,6 +23,12 @@ class MatchScoreDTO(BaseModel):
     away_team_score_ft: str
     away_team_score: str
 
+class ReducedGameDTO(BaseModel):
+    game_id: str
+    home_team: str
+    away_team: str
+    round_id: str
+    
 class GameDTO(BaseModel):
     game_id: str = Field(alias="GameId")
     year: int = Field(alias="Year")
@@ -47,7 +53,6 @@ class GameDTO(BaseModel):
     min_temp: float = Field(alias="MinTemp", default=None)
     rainfall: float = Field(alias="Rainfall", default=None)
     
-
     class Config:
         validate_by_name = True
         frozen=True

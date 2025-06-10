@@ -3,6 +3,7 @@ import asyncio
 from typing import Tuple
 
 from database import AsyncDatabaseConnection
+from dtos.games_dto import GameDTO
 from repositories.game_repository import GameRepository
 from repositories.player_repository import PlayerRepository
 from repositories.stats_repository import StatRepository
@@ -93,25 +94,34 @@ async def scrape_data_from_afl_tables(afl_tables_scraper: AflTablesScraper) -> T
     stat_dtos = set()
     player_dtos = set()
 
-    for link in match_links:
+    async def process_match(link):
         game_dto = await afl_tables_scraper.get_match_related_data(link)
-        player_stat_dtos, player_dtos = await afl_tables_scraper.get_player_stats_for_match(
+        if isinstance(game_dto, GameDTO):
+            afl_tables_scraper.scraped_games.add(game_dto)
+        
+        await afl_tables_scraper.get_player_stats_for_match(
             match_endpoint=link,
             game_id=game_dto.game_id, 
             home_team=game_dto.home_team, 
             away_team=game_dto.away_team,
             round_id = game_dto.round_id,
-            player_dtos=player_dtos,
             player_match_stats_dtos=stat_dtos
         )
-        game_dtos.add(game_dto)
+
+        return game_dto, player_stat_dtos, player_dtos
+
+    tasks = [process_match(link) for link in match_links]
+    results = await asyncio.gather(*tasks)
+
+    for game_dto, player_stat_dtos, player_dtos in results:
+        if isinstance(game_dto, GameDTO):
+            game_dtos.add(game_dto)
         stat_dtos.update(player_stat_dtos)
         player_dtos.update(player_dtos)
     
     return game_dtos, player_dtos, stat_dtos
 
 async def scrape_stats():
-
     db_manager = AsyncDatabaseConnection()
     game_repository, player_repository, stat_repository = initialise_repositories(db_manager)
     game_service, player_service, stat_service = initialise_services(
@@ -122,9 +132,9 @@ async def scrape_stats():
     afl_tables_scraper = initialise_scrapers(game_service, player_service, stat_service)
     game_dtos, player_dtos, stat_dtos = await scrape_data_from_afl_tables(afl_tables_scraper) 
     
-    game_service.insert_games(game_dtos)
-    player_service.insert_players(player_dtos)
-    stat_service.insert_stats(stat_dtos)
+    await game_service.insert_games(game_dtos)
+    await player_service.insert_players(player_dtos)
+    await stat_service.insert_stats(stat_dtos)
     
 
 if __name__ == "__main__":

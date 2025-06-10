@@ -1,4 +1,3 @@
-import atexit
 from contextlib import asynccontextmanager
 import asyncio
 import os
@@ -15,11 +14,10 @@ class AsyncDatabaseConnection():
         self._min_conn = min_conn
         self._max_conn = max_conn
         self.pool = None
-        self.connection_string = f"""postgresql://{os.getenv("DB_NAME")}:
-        {os.getenv("DB_PWORD")}@{os.getenv("DB_URL")}
-        {os.getenv("DB_USERNAME")}?sslmode={os.getenv("DB_SSL")}"""
-
-        atexit.register(self._sync_close_all)
+        self.connection_string = f'postgresql://{os.getenv("DB_USERNAME")}:'
+        f'{os.getenv("DB_PWORD")}@'
+        f'{os.getenv("DB_URL")}{os.getenv("DB_NAME")}?'
+        f'sslmode={os.getenv("DB_SSL")}'        
 
     async def create_connection_pool(self):
         self.pool = await pool.create_pool(
